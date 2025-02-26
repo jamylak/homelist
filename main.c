@@ -2,6 +2,7 @@
 // for all nested git repos (with max nested limi)
 // #include <cstdint>
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,8 +11,7 @@
 #include <sys/dirent.h>
 
 #define ARENA_SIZE 1000000 * 128
-// TODO: Make configurable
-#define MAX_NESTING_LEVEL 4
+#define MAX_NESTING_LEVEL 3
 
 #define QUEUE_PATH_ENTRY_BASE_SIZE sizeof(uint16_t) * 2
 #define QUEUE_PATH_ENTRY_ALIGNMENT 64
@@ -20,6 +20,7 @@ typedef struct {
     uint16_t lenBytes;
     // how nested the dir is eg. a->b->c
     uint16_t nesting_level;
+    bool is_git_dir;
     char data[];
 } __attribute__((aligned(QUEUE_PATH_ENTRY_ALIGNMENT))) QueuePathEntry;
 
@@ -36,12 +37,15 @@ typedef struct {
 
 void process_dir_into_queue(Queue *queue, const char *dirpath, uint16_t nesting_level) {
   struct dirent *entry;
+  bool is_git_dir = false;
 
   DIR *dir = opendir(dirpath);
 
   while ((entry = readdir(dir)) != NULL) {
-    if (entry->d_type == DT_DIR && entry->d_name[0] != '.') {
-      printf("%s\n", entry->d_name);
+    if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".git") == 0) {
+      is_git_dir = true;
+    }
+    if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0) {
 
       // Construct full path from parent dir
       // +1 for the slash and +1 for null terminator
@@ -64,7 +68,9 @@ void process_dir_into_queue(Queue *queue, const char *dirpath, uint16_t nesting_
       // doesn't matter
       current_entry->lenBytes = aligned_size;
       current_entry->nesting_level = nesting_level + 1;
+      current_entry->is_git_dir = is_git_dir;
       snprintf(current_entry->data, pathlen, "%s/%s", dirpath, entry->d_name);
+      // printf("%s\n", current_entry->data);
 
       // Increment currentBytes by the aligned size
       queue->currentBytes += aligned_size;
@@ -76,7 +82,11 @@ void process_dir_into_queue(Queue *queue, const char *dirpath, uint16_t nesting_
 void process_queue_item(Queue *queue) {
   assert(queue->processedBytes < queue->currentBytes);
   QueuePathEntry *current_entry = (QueuePathEntry *)((char *)queue->entries + queue->processedBytes);
-  printf("Current queue item: %s\n", current_entry->data);
+  if (current_entry->is_git_dir) {
+    printf("Git dir: %s\n", current_entry->data);
+  }
+  // printf("Is git dir: %d\n", current_entry->is_git_dir);
+
   queue->processedBytes += current_entry->lenBytes;
   if (current_entry->nesting_level < MAX_NESTING_LEVEL)
     process_dir_into_queue(queue, current_entry->data, current_entry->nesting_level);
