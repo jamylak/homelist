@@ -17,10 +17,11 @@ typedef struct {
 
 typedef struct {
     QueuePathEntry *entries;
-    size_t current;
+    // current bytes used in the queue so far
+    size_t currentBytes;
 } Queue;
 
-void process_dir_into_queue(const char *dirpath) {
+void process_dir_into_queue(Queue *queue, const char *dirpath) {
   struct dirent *entry;
 
   DIR *dir = opendir(dirpath);
@@ -29,22 +30,44 @@ void process_dir_into_queue(const char *dirpath) {
     if (entry->d_type == DT_DIR && entry->d_name[0] != '.') {
       printf("%s\n", entry->d_name);
 
-      // Construct full path
-      uint16_t pathlen = strlen(dirpath) + 1 + entry->d_namlen;
-      // char sub_path[pathlen];
-      // snprintf(sub_path, sizeof(sub_path), "%s/%s", dirpath, entry->d_name);
+      // Construct full path from parent dir
+      // +1 for the slash and +1 for null terminator
+      uint16_t pathlen = strlen(dirpath) + 1 + entry->d_namlen + 1;
+
+      // Calculate the size of this QueuePathEntry (unaligned)
+      size_t entry_size = sizeof(uint16_t) + pathlen;
+
+      // Round up to the next 64-byte boundary
+      size_t aligned_size = (entry_size + 63) & ~63;
+
+      // Get the current entry as a pointer
+      QueuePathEntry *current_entry = (QueuePathEntry *)((char *)queue->entries + queue->currentBytes);
+
+      // Set the entry’s fields
+      current_entry->len = pathlen;
+      snprintf(current_entry->data, pathlen, "%s/%s", dirpath, entry->d_name);
+
+      // Increment currentBytes by the aligned size
+      queue->currentBytes += aligned_size;
     }
   }
   closedir(dir);
 }
 
 int main() {
-  // Just guessing average dir size as 128
-  QueuePathEntry *all_entries = malloc(ARENA_SIZE);
-  Queue queue = {.entries = all_entries, .current=0};
+  QueuePathEntry *all_entries = aligned_alloc(64, ARENA_SIZE);
+  Queue queue = {.entries = all_entries, .currentBytes=0};
   
   const char *home = getenv("HOME");
-  printf("%s", home);
-  process_dir_into_queue(home);
+  printf("%s\n", home);
+  process_dir_into_queue(&queue, home);
+
+  // Test get something from queue
+  printf("Test queue item: %s\n", queue.entries[0].data);
+
+  QueuePathEntry *second_entry = (QueuePathEntry *)((char *)queue.entries + 
+    ((sizeof(uint16_t) + queue.entries->len + 63) & ~63));
+
+  printf("Test queue item 2: %s\n", second_entry->data);
   return 0;
 }
