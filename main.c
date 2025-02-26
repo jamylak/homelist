@@ -10,12 +10,21 @@
 #include <sys/dirent.h>
 
 #define ARENA_SIZE 1000000 * 128
+// TODO: Make configurable
+#define MAX_NESTING_LEVEL 4
+
+#define QUEUE_PATH_ENTRY_BASE_SIZE sizeof(uint16_t) * 2
+#define QUEUE_PATH_ENTRY_ALIGNMENT 64
 
 typedef struct {
     uint16_t lenBytes;
+    // how nested the dir is eg. a->b->c
+    uint16_t nesting_level;
     char data[];
-} __attribute__((aligned(64))) QueuePathEntry;
+} __attribute__((aligned(QUEUE_PATH_ENTRY_ALIGNMENT))) QueuePathEntry;
 
+
+// Update QUEUE_PATH_ENTRY_BASE_SIZE if editing members 
 typedef struct {
     QueuePathEntry *entries;
     // current bytes used in the queue so far
@@ -25,7 +34,7 @@ typedef struct {
     size_t processedBytes;
 } Queue;
 
-void process_dir_into_queue(Queue *queue, const char *dirpath) {
+void process_dir_into_queue(Queue *queue, const char *dirpath, uint16_t nesting_level) {
   struct dirent *entry;
 
   DIR *dir = opendir(dirpath);
@@ -39,10 +48,12 @@ void process_dir_into_queue(Queue *queue, const char *dirpath) {
       uint16_t pathlen = strlen(dirpath) + 1 + entry->d_namlen + 1;
 
       // Calculate the size of this QueuePathEntry (unaligned)
-      size_t entry_size = sizeof(uint16_t) + pathlen;
+      size_t entry_size = QUEUE_PATH_ENTRY_BASE_SIZE + pathlen;
 
-      // Round up to the next 64-byte boundary
-      size_t aligned_size = (entry_size + 63) & ~63;
+      // Round up to the next QUEUE_PATH_ENTRY_ALIGNMENT-byte boundary
+      // eg. for 64 byte alignment
+      // size_t aligned_size = (entry_size + 63) & ~63;
+      size_t aligned_size = (entry_size + (QUEUE_PATH_ENTRY_ALIGNMENT - 1)) & ~(QUEUE_PATH_ENTRY_ALIGNMENT - 1);
 
       // Get the current entry as a pointer
       QueuePathEntry *current_entry = (QueuePathEntry *)((char *)queue->entries + queue->currentBytes);
@@ -52,6 +63,7 @@ void process_dir_into_queue(Queue *queue, const char *dirpath) {
       // could do so if needed... but since null terminated maybe
       // doesn't matter
       current_entry->lenBytes = aligned_size;
+      current_entry->nesting_level = nesting_level + 1;
       snprintf(current_entry->data, pathlen, "%s/%s", dirpath, entry->d_name);
 
       // Increment currentBytes by the aligned size
@@ -66,6 +78,8 @@ void process_queue_item(Queue *queue) {
   QueuePathEntry *current_entry = (QueuePathEntry *)((char *)queue->entries + queue->processedBytes);
   printf("Current queue item: %s\n", current_entry->data);
   queue->processedBytes += current_entry->lenBytes;
+  if (current_entry->nesting_level < MAX_NESTING_LEVEL)
+    process_dir_into_queue(queue, current_entry->data, current_entry->nesting_level);
 }
 
 void process_queue(Queue *queue) {
@@ -75,12 +89,12 @@ void process_queue(Queue *queue) {
 }
 
 int main() {
-  QueuePathEntry *all_entries = aligned_alloc(64, ARENA_SIZE);
+  QueuePathEntry *all_entries = aligned_alloc(QUEUE_PATH_ENTRY_ALIGNMENT, ARENA_SIZE);
   Queue queue = {.entries = all_entries, .processedBytes=0, .currentBytes=0};
   
   const char *home = getenv("HOME");
   printf("%s\n", home);
-  process_dir_into_queue(&queue, home);
+  process_dir_into_queue(&queue, home, 0);
   process_queue(&queue);
 
   return 0;
