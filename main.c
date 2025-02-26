@@ -74,6 +74,12 @@ void process_dir_into_queue(Queue *queue, const char *dirpath, uint16_t nesting_
 
       // Increment currentBytes by the aligned size
       queue->currentBytes += aligned_size;
+
+    }
+    if (is_git_dir) {
+      // Now that we found a git dir, we should not add more folders
+      // to the queue within this dir
+      break;
     }
   }
   closedir(dir);
