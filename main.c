@@ -1,6 +1,7 @@
 // BFS Search over eg. Home Directory
 // for all nested git repos (with max nested limi)
 // #include <cstdint>
+#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +12,7 @@
 #define ARENA_SIZE 1000000 * 128
 
 typedef struct {
-    uint16_t len;
+    uint16_t lenBytes;
     char data[];
 } __attribute__((aligned(64))) QueuePathEntry;
 
@@ -19,6 +20,9 @@ typedef struct {
     QueuePathEntry *entries;
     // current bytes used in the queue so far
     size_t currentBytes;
+    // amount of bytes process in the queue so far
+    // eg. we've already completed those queue items
+    size_t processedBytes;
 } Queue;
 
 void process_dir_into_queue(Queue *queue, const char *dirpath) {
@@ -44,7 +48,10 @@ void process_dir_into_queue(Queue *queue, const char *dirpath) {
       QueuePathEntry *current_entry = (QueuePathEntry *)((char *)queue->entries + queue->currentBytes);
 
       // Set the entry’s fields
-      current_entry->len = pathlen;
+      // I guess we are not saving the string size itself
+      // could do so if needed... but since null terminated maybe
+      // doesn't matter
+      current_entry->lenBytes = aligned_size;
       snprintf(current_entry->data, pathlen, "%s/%s", dirpath, entry->d_name);
 
       // Increment currentBytes by the aligned size
@@ -54,20 +61,23 @@ void process_dir_into_queue(Queue *queue, const char *dirpath) {
   closedir(dir);
 }
 
+void process_queue_item(Queue *queue) {
+  assert(queue->processedBytes < queue->currentBytes);
+  QueuePathEntry *current_entry = (QueuePathEntry *)((char *)queue->entries + queue->processedBytes);
+  printf("Current queue item: %s\n", current_entry->data);
+  queue->processedBytes += current_entry->lenBytes;
+}
+
 int main() {
   QueuePathEntry *all_entries = aligned_alloc(64, ARENA_SIZE);
-  Queue queue = {.entries = all_entries, .currentBytes=0};
+  Queue queue = {.entries = all_entries, .processedBytes=0, .currentBytes=0};
   
   const char *home = getenv("HOME");
   printf("%s\n", home);
   process_dir_into_queue(&queue, home);
+  process_queue_item(&queue);
+  process_queue_item(&queue);
+  process_queue_item(&queue);
 
-  // Test get something from queue
-  printf("Test queue item: %s\n", queue.entries[0].data);
-
-  QueuePathEntry *second_entry = (QueuePathEntry *)((char *)queue.entries + 
-    ((sizeof(uint16_t) + queue.entries->len + 63) & ~63));
-
-  printf("Test queue item 2: %s\n", second_entry->data);
   return 0;
 }
