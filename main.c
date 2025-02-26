@@ -68,6 +68,12 @@ void process_queue_item(Queue *queue) {
   queue->processedBytes += current_entry->lenBytes;
 }
 
+void process_queue(Queue *queue) {
+  while (queue->processedBytes < queue->currentBytes) {
+    process_queue_item(queue);
+  }
+}
+
 int main() {
   QueuePathEntry *all_entries = aligned_alloc(64, ARENA_SIZE);
   Queue queue = {.entries = all_entries, .processedBytes=0, .currentBytes=0};
@@ -75,9 +81,7 @@ int main() {
   const char *home = getenv("HOME");
   printf("%s\n", home);
   process_dir_into_queue(&queue, home);
-  process_queue_item(&queue);
-  process_queue_item(&queue);
-  process_queue_item(&queue);
+  process_queue(&queue);
 
   return 0;
 }
