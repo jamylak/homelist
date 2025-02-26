@@ -89,9 +89,9 @@ void process_queue_item(Queue *queue) {
   assert(queue->processedBytes < queue->currentBytes);
   QueuePathEntry *current_entry = (QueuePathEntry *)((char *)queue->entries + queue->processedBytes);
   if (current_entry->is_git_dir) {
-    printf("Git dir: %s\n", current_entry->data);
+    // Print without .git at the end
+    printf("%.*s\n", (int)(strlen(current_entry->data) - 4), current_entry->data);
   }
-  // printf("Is git dir: %d\n", current_entry->is_git_dir);
 
   queue->processedBytes += current_entry->lenBytes;
   if (current_entry->nesting_level < MAX_NESTING_LEVEL)
