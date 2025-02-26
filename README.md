@@ -10,5 +10,8 @@ Executed in  272.12 millis    fish           external
 ```
 
 ### TODO:
+- getdirentries 1 syscall?
+- getdents / linux?
+- fstatat for last modified
 - MAX_NESTING_LEVEL configurable?
 - Ignore hidden files?
